@@ -14,7 +14,7 @@ namespace App {
         if (!glfwInit()) exit(1);
         
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        window = glfwCreateWindow(width, height, "test", NULL, NULL);
+        window = glfwCreateWindow(width, height, "test1", NULL, NULL);
         
         renderer = new Renderer(window);
     }
@@ -26,10 +26,9 @@ namespace App {
     }
 
     void start() {
-
         while (!glfwWindowShouldClose(window)) {
             renderer->update();
-            
+            renderer->draw();
             renderer->waitReady();
         }
     }

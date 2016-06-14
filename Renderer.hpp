@@ -11,6 +11,8 @@ class Renderer {
         bool initInstance();
         void destroyInstance();
         
+        uint32_t queueFamilyIndex = -1;
+        VkQueue queue = VK_NULL_HANDLE;
         VkPhysicalDevice gpu = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;
         bool initDevice();
@@ -19,6 +21,12 @@ class Renderer {
         VkSurfaceKHR surface = VK_NULL_HANDLE;
         bool initSurface(GLFWwindow* window);
         void destroySurface();
+        
+        VkCommandPool commandPool = VK_NULL_HANDLE;
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        VkFence fence = VK_NULL_HANDLE;
+        bool initCommands();
+        void destroyCommands();
     public:
         Renderer(GLFWwindow* window);
         ~Renderer();
@@ -28,6 +36,8 @@ class Renderer {
                 vkDeviceWaitIdle(device);
             }
         }
+        
+        void draw();
         
         void update() {
             glfwPollEvents();

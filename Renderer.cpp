@@ -5,7 +5,37 @@
 #include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
 
+#include <climits>
 
+// Draw
+void Renderer::draw() {
+    VkCommandBufferBeginInfo beginInfo {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    
+    VkViewport viewport {};
+    viewport.maxDepth = 1.0f;
+    viewport.minDepth = 0.0f;
+    viewport.width = 512;
+    viewport.height = 512;
+    viewport.x = 0;
+    viewport.y = 0;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    
+    vkEndCommandBuffer(commandBuffer);
+    
+    VkSubmitInfo submitInfo {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+    
+    vkQueueSubmit(queue, 1, &submitInfo, fence);
+    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT_MAX);
+    //vkQueueWaitIdle(queue);
+}
+
+// Init
 Renderer::Renderer(GLFWwindow* window){
     if (!glfwVulkanSupported()) exit(1);    
     
@@ -19,14 +49,8 @@ Renderer::Renderer(GLFWwindow* window){
     if (!initInstance()) exit(1);
     //if (!initSurface(window)) exit(1);
     if (!initDevice()) exit(1);
+    if (!initCommands()) exit(1);
 }
-
-Renderer::~Renderer(){ 
-    destroyDevice();
-    //destroySurface();
-    destroyInstance();   
-}
-
 
 bool Renderer::initInstance() {
     VkInstanceCreateInfo instanceCreateInfo {};
@@ -51,12 +75,6 @@ bool Renderer::initInstance() {
     }
     
     return true;
-}
-
-void Renderer::destroyInstance() {
-    if (instance != VK_NULL_HANDLE) {
-        vkDestroyInstance(instance, NULL);
-    }
 }
 
 bool Renderer::initDevice() {
@@ -91,12 +109,14 @@ bool Renderer::initDevice() {
         }
     }
     if (family_index >= family_count) return false;
+    
+    this->queueFamilyIndex = family_index;
     // }}
     
     float queue_priorities[] { 1.0f };
     VkDeviceQueueCreateInfo deviceQueueCreateInfo {}; 
     deviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    deviceQueueCreateInfo.queueFamilyIndex = family_index;
+    deviceQueueCreateInfo.queueFamilyIndex = this->queueFamilyIndex;
     deviceQueueCreateInfo.queueCount = 1;
     deviceQueueCreateInfo.pQueuePriorities = queue_priorities;
     
@@ -108,7 +128,62 @@ bool Renderer::initDevice() {
     result = vkCreateDevice(this->gpu, &deviceCreateInfo, NULL, &device);
     if (result != VK_SUCCESS) return false;
     
+    vkGetDeviceQueue(device, queueFamilyIndex, 0, &queue);
+    
     return true;
+}
+
+bool Renderer::initSurface(GLFWwindow* window) {
+    VkResult result = glfwCreateWindowSurface(instance, window, NULL, &surface);
+    if (result != VK_SUCCESS) return false;
+    
+    return true;
+}
+
+bool Renderer::initCommands() {
+    VkResult result;
+    
+    // Create fence
+    VkFenceCreateInfo fenceCreateInfo {};
+    fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    
+    result = vkCreateFence(device, &fenceCreateInfo, NULL, &fence); 
+    if (result != VK_SUCCESS) return false;
+
+    // Create command pool
+    VkCommandPoolCreateInfo poolCreateInfo {};
+    poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolCreateInfo.queueFamilyIndex = this->queueFamilyIndex ;
+    poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    
+    result = vkCreateCommandPool(device, &poolCreateInfo, NULL, &commandPool);
+    if (result != VK_SUCCESS) return false;
+
+    // Create command buffer
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo {};
+    commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    commandBufferAllocateInfo.commandPool = commandPool;
+    commandBufferAllocateInfo.commandBufferCount = 1;
+    commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    
+    result = vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, &commandBuffer);
+    if (result != VK_SUCCESS) return false;
+
+    return true;
+}
+
+// Destroy
+Renderer::~Renderer(){ 
+    destroyCommands();
+    //destroySurface();
+    destroyDevice();
+    destroyInstance();   
+}
+
+void Renderer::destroyInstance() {
+    if (instance != VK_NULL_HANDLE) {
+        vkDestroyInstance(instance, NULL);
+    }
 }
 
 void Renderer::destroyDevice() {
@@ -118,11 +193,14 @@ void Renderer::destroyDevice() {
     }
 }
 
-bool Renderer::initSurface(GLFWwindow* window) {
-    VkResult result = glfwCreateWindowSurface(instance, window, NULL, &surface);
-    if (result != VK_SUCCESS) return false;
+void Renderer::destroyCommands() {
+    if (commandPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(device, commandPool, NULL);
+    }
     
-    return true;
+    if (fence != VK_NULL_HANDLE) {
+        vkDestroyFence(device, fence, NULL);
+    }
 }
 
 void Renderer::destroySurface() {
