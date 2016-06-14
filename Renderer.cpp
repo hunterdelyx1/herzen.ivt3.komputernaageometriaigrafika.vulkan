@@ -10,38 +10,39 @@ Renderer::Renderer(GLFWwindow* window){
     if (!glfwVulkanSupported()) exit(1);    
     
     applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    applicationInfo.pNext = NULL;
-    applicationInfo.pApplicationName = "test";
-    applicationInfo.pEngineName = NULL;
-    applicationInfo.engineVersion = 1;
     applicationInfo.apiVersion = VK_API_VERSION_1_0;
+    applicationInfo.applicationVersion = VK_MAKE_VERSION(0, 1, 0);
+    applicationInfo.pApplicationName = "test";
     
     this->window = window;
-    
+
     if (!initInstance()) exit(1);
-    if (!initSurface(window)) exit(1);
+    //if (!initSurface(window)) exit(1);
     if (!initDevice()) exit(1);
 }
 
 Renderer::~Renderer(){ 
-
     destroyDevice();
-    destroySurface();
+    //destroySurface();
     destroyInstance();   
 }
 
 
 bool Renderer::initInstance() {
-    VkInstanceCreateInfo instanceCreateInfo;
+    VkInstanceCreateInfo instanceCreateInfo {};
     instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    instanceCreateInfo.pNext = NULL;
     instanceCreateInfo.pApplicationInfo = &applicationInfo;
+    
+    instanceCreateInfo.pNext = NULL;
+    
     instanceCreateInfo.enabledLayerCount = 0;
     instanceCreateInfo.ppEnabledLayerNames = NULL;
-    
-    uint32_t count;
-    instanceCreateInfo.ppEnabledExtensionNames = glfwGetRequiredInstanceExtensions(&count);
-    instanceCreateInfo.enabledExtensionCount = count;
+    instanceCreateInfo.enabledExtensionCount = 0;
+    instanceCreateInfo.ppEnabledExtensionNames = NULL;
+
+    //uint32_t count;
+    //instanceCreateInfo.ppEnabledExtensionNames = glfwGetRequiredInstanceExtensions(&count);
+    //instanceCreateInfo.enabledExtensionCount = count;
 
     VkResult result = vkCreateInstance(&instanceCreateInfo, NULL, &instance);
     if (result != VK_SUCCESS) {
@@ -59,41 +60,52 @@ void Renderer::destroyInstance() {
 }
 
 bool Renderer::initDevice() {
-    uint32_t deviceCount = 0;
-    VkResult result = vkEnumeratePhysicalDevices(instance, &deviceCount, NULL);
+    VkResult result;
+    
+    // Get GPU
+    // {{
+    uint32_t gpu_count = 0;
+    result = vkEnumeratePhysicalDevices(instance, &gpu_count, NULL);
     
     if (result != VK_SUCCESS) return false;
-    if (deviceCount == 0) return false;
+    if (gpu_count == 0) return false;
 
-    std::vector<VkPhysicalDevice> physicalDevices(deviceCount);
-    result = vkEnumeratePhysicalDevices(instance, &deviceCount, physicalDevices.data());
+    std::vector<VkPhysicalDevice> gpu_list(gpu_count);
+    result = vkEnumeratePhysicalDevices(instance, &gpu_count, gpu_list.data());
     if (result != VK_SUCCESS) return false;
     
-    float queuePriorities[] = { 1.0f };
-    VkDeviceQueueCreateInfo deviceQueueInfo; 
-    deviceQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    deviceQueueInfo.pNext = NULL;
-    deviceQueueInfo.flags = 0;
-    deviceQueueInfo.queueFamilyIndex = 0;
-    deviceQueueInfo.queueCount = 1;
-    deviceQueueInfo.pQueuePriorities = queuePriorities;
+    this->gpu = gpu_list[0];
+    // }}
     
-    VkDeviceCreateInfo deviceInfo;
-    deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    deviceInfo.pNext = NULL;
-    deviceInfo.flags = 0;
-    deviceInfo.enabledLayerCount = 0;
-    deviceInfo.ppEnabledLayerNames = NULL;
-    std::vector<const char*> vextensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    deviceInfo.enabledExtensionCount = static_cast<uint32_t>(vextensions.size());
-    deviceInfo.ppEnabledExtensionNames = &vextensions[0];
-    deviceInfo.pEnabledFeatures = NULL;
-
+    // Get index of queue family that supports graphics
+    // {{
+    uint32_t family_count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(this->gpu, &family_count, NULL);
+    std::vector<VkQueueFamilyProperties> family_property_list(family_count);
+    vkGetPhysicalDeviceQueueFamilyProperties(this->gpu, &family_count, family_property_list.data());
     
-    deviceInfo.queueCreateInfoCount = 1;
-    deviceInfo.pQueueCreateInfos = &deviceQueueInfo;
-
-    result = vkCreateDevice(physicalDevices[0], &deviceInfo, NULL, &device);
+    uint32_t family_index;
+    for (family_index = 0; family_index < family_count; family_index++) {
+        if (family_property_list[family_index].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            break;
+        }
+    }
+    if (family_index >= family_count) return false;
+    // }}
+    
+    float queue_priorities[] { 1.0f };
+    VkDeviceQueueCreateInfo deviceQueueCreateInfo {}; 
+    deviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    deviceQueueCreateInfo.queueFamilyIndex = family_index;
+    deviceQueueCreateInfo.queueCount = 1;
+    deviceQueueCreateInfo.pQueuePriorities = queue_priorities;
+    
+    VkDeviceCreateInfo deviceCreateInfo {};
+    deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceCreateInfo.queueCreateInfoCount = 1;
+    deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
+    
+    result = vkCreateDevice(this->gpu, &deviceCreateInfo, NULL, &device);
     if (result != VK_SUCCESS) return false;
     
     return true;

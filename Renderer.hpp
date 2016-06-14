@@ -7,15 +7,16 @@ class Renderer {
         
         VkApplicationInfo applicationInfo;
         
-        VkInstance instance;
+        VkInstance instance = VK_NULL_HANDLE;
         bool initInstance();
         void destroyInstance();
-
-        VkDevice device;
+        
+        VkPhysicalDevice gpu = VK_NULL_HANDLE;
+        VkDevice device = VK_NULL_HANDLE;
         bool initDevice();
         void destroyDevice();
         
-        VkSurfaceKHR surface;
+        VkSurfaceKHR surface = VK_NULL_HANDLE;
         bool initSurface(GLFWwindow* window);
         void destroySurface();
     public:
@@ -23,7 +24,9 @@ class Renderer {
         ~Renderer();
         
         void waitReady() {
-            vkDeviceWaitIdle(device);
+            if (device != VK_NULL_HANDLE) {
+                vkDeviceWaitIdle(device);
+            }
         }
         
         void update() {

@@ -26,9 +26,10 @@ namespace App {
     }
 
     void start() {
+
         while (!glfwWindowShouldClose(window)) {
             renderer->update();
-
+            
             renderer->waitReady();
         }
     }
