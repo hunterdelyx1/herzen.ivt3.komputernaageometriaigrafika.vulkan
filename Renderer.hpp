@@ -39,11 +39,22 @@ class Renderer {
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
         bool initSwapchain();
         void destroySwapchain();
-        
+
+        uint32_t currentImage = 0;
         std::vector<VkImage> swapchainImages = {};
         std::vector<VkImageView> swapchainImageViews = {};
+        std::vector<VkFramebuffer> swapchainFramebuffers = {};
         bool initSwapchainImages();
         void destroySwapchainImages();
+        
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        bool initRenderPass();
+        void destroyRenderPass();
+        
+        void setImageLayout(VkCommandBuffer cmdBuffer, VkImage image,
+            VkImageAspectFlags aspects,
+            VkImageLayout oldLayout,
+            VkImageLayout newLayout);
     public:
         Renderer(GLFWwindow* window);
         ~Renderer();

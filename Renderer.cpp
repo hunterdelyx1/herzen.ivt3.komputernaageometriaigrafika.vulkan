@@ -8,6 +8,50 @@
 #include <climits>
 #include <string>
 
+static const float g_vertex_buffer_data[] = {
+    -1.0f,-1.0f,-1.0f,  // -X side
+    -1.0f,-1.0f, 1.0f,
+    -1.0f, 1.0f, 1.0f,
+    -1.0f, 1.0f, 1.0f,
+    -1.0f, 1.0f,-1.0f,
+    -1.0f,-1.0f,-1.0f,
+
+    -1.0f,-1.0f,-1.0f,  // -Z side
+     1.0f, 1.0f,-1.0f,
+     1.0f,-1.0f,-1.0f,
+    -1.0f,-1.0f,-1.0f,
+    -1.0f, 1.0f,-1.0f,
+     1.0f, 1.0f,-1.0f,
+
+    -1.0f,-1.0f,-1.0f,  // -Y side
+     1.0f,-1.0f,-1.0f,
+     1.0f,-1.0f, 1.0f,
+    -1.0f,-1.0f,-1.0f,
+     1.0f,-1.0f, 1.0f,
+    -1.0f,-1.0f, 1.0f,
+
+    -1.0f, 1.0f,-1.0f,  // +Y side
+    -1.0f, 1.0f, 1.0f,
+     1.0f, 1.0f, 1.0f,
+    -1.0f, 1.0f,-1.0f,
+     1.0f, 1.0f, 1.0f,
+     1.0f, 1.0f,-1.0f,
+
+     1.0f, 1.0f,-1.0f,  // +X side
+     1.0f, 1.0f, 1.0f,
+     1.0f,-1.0f, 1.0f,
+     1.0f,-1.0f, 1.0f,
+     1.0f,-1.0f,-1.0f,
+     1.0f, 1.0f,-1.0f,
+
+    -1.0f, 1.0f, 1.0f,  // +Z side
+    -1.0f,-1.0f, 1.0f,
+     1.0f, 1.0f, 1.0f,
+    -1.0f,-1.0f, 1.0f,
+     1.0f,-1.0f, 1.0f,
+     1.0f, 1.0f, 1.0f,
+};
+
 std::string Renderer::getVulkanErrorString(VkResult result) {
     switch(result) {
         case VK_ERROR_OUT_OF_HOST_MEMORY: 
@@ -48,32 +92,137 @@ std::string Renderer::getVulkanErrorString(VkResult result) {
     }
 }
 
+float test = 0.0f;
+
 // Draw
 void Renderer::draw() {
+    VkResult result;
+
     VkCommandBufferBeginInfo beginInfo {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     
+    result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX,
+                                    (VkSemaphore)0,
+                                    fence,
+                                    &currentImage);
+    
+    if (result != VK_SUCCESS) {
+        std::cout << "Failed to create AcquireNextImage: " << getVulkanErrorString(result) << std::endl;
+    }
     vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    test = test + 0.01f;
+    if(test > 1.0f){
+        test = 0.0f;
+    }
+
+    VkClearColorValue clear_color = {{ test, test, test, 0.0f }};
+
+	VkImageSubresourceRange image_subresource_range {};
+    image_subresource_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    image_subresource_range.baseMipLevel = 0;
+    image_subresource_range.levelCount = 1;
+    image_subresource_range.baseArrayLayer = 0;
+    image_subresource_range.layerCount = 1;
+    
+    vkCmdClearColorImage(commandBuffer, swapchainImages[currentImage], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_color, 1, &image_subresource_range );
     
     VkViewport viewport {};
-    viewport.maxDepth = 1.0f;
-    viewport.minDepth = 0.0f;
-    viewport.width = 512;
-    viewport.height = 512;
-    viewport.x = 0;
-    viewport.y = 0;
+    viewport.height = (float)surfaceCapabilities.currentExtent.height;
+    viewport.width = (float)surfaceCapabilities.currentExtent.width;
+    viewport.minDepth = (float)0.0f;
+    viewport.maxDepth = (float)1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor {};
+    scissor.extent.width = surfaceCapabilities.currentExtent.height;
+    scissor.extent.height = surfaceCapabilities.currentExtent.width;
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    
+    //vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
     
     vkEndCommandBuffer(commandBuffer);
     
+    VkPipelineStageFlags wait_dst_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
     VkSubmitInfo submitInfo {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
+    submitInfo.pWaitDstStageMask = &wait_dst_stage_mask;
     
     vkQueueSubmit(queue, 1, &submitInfo, fence);
+    
     vkWaitForFences(device, 1, &fence, VK_TRUE, UINT_MAX);
+        
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &swapchain;
+    presentInfo.pImageIndices = &currentImage;
+    
+    vkQueuePresentKHR(queue, &presentInfo);
  }
+
+void Renderer::setImageLayout(VkCommandBuffer cmdBuffer, VkImage image, VkImageAspectFlags aspects, VkImageLayout oldLayout, VkImageLayout newLayout){
+    VkImageMemoryBarrier imageBarrier = {};
+    imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    imageBarrier.pNext = NULL;
+    imageBarrier.oldLayout = oldLayout;
+    imageBarrier.newLayout = newLayout;
+    imageBarrier.image = image;
+    imageBarrier.subresourceRange.aspectMask = aspects;
+    imageBarrier.subresourceRange.baseMipLevel = 0;
+    imageBarrier.subresourceRange.levelCount = 1;
+    imageBarrier.subresourceRange.layerCount = 1;
+    
+    switch (oldLayout) {
+      case VK_IMAGE_LAYOUT_PREINITIALIZED:
+        imageBarrier.srcAccessMask =
+            VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        imageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        imageBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        imageBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        break;
+    }
+
+    switch (newLayout) {
+      case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        imageBarrier.srcAccessMask |= VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        imageBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        imageBarrier.dstAccessMask |=
+            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
+      case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        imageBarrier.srcAccessMask =
+            VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        break;
+    }
+    
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, NULL, 0, NULL, 1,&imageBarrier);
+}
 
 // Init
 Renderer::Renderer(GLFWwindow* window){
@@ -93,7 +242,7 @@ Renderer::Renderer(GLFWwindow* window){
     if (!initCommands()) exit(1);
 
     if (!initSwapchain()) exit(1);
-    if (!initSwapchainImages()) exit(1);
+    if (!initRenderPass()) exit(1);
 }
 
 bool Renderer::initInstance() {
@@ -181,7 +330,7 @@ bool Renderer::initDevice() {
         std::cout << "Failed to create logical device: " << getVulkanErrorString(result) << std::endl;
         return false;
      }
-    
+     
     vkGetDeviceQueue(device, queueFamilyIndex, 0, &queue);
     
     return true;
@@ -318,6 +467,9 @@ bool Renderer::initSwapchain() {
     }
     
     vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, NULL);
+    
+    if (!initSwapchainImages()) return false;
+    
     return true;
 }
 
@@ -326,7 +478,8 @@ bool Renderer::initSwapchainImages() {
 
     swapchainImages.resize(swapchainImageCount);
     swapchainImageViews.resize(swapchainImageCount);
-    
+    swapchainFramebuffers.resize(swapchainImageCount);
+
     result = vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data());
     if (result != VK_SUCCESS) {
         std::cout << "Failed to create swapchain image view: " << getVulkanErrorString(result) << std::endl;
@@ -355,7 +508,80 @@ bool Renderer::initSwapchainImages() {
             return false;
         }
         
+        VkFramebufferCreateInfo framebufferbCreateInfo = {};
+        framebufferbCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferbCreateInfo.attachmentCount = 1;
+        framebufferbCreateInfo.pAttachments = &swapchainImageViews[i];
+        framebufferbCreateInfo.width = surfaceCapabilities.currentExtent.width;
+        framebufferbCreateInfo.height = surfaceCapabilities.currentExtent.width;
+        framebufferbCreateInfo.layers = 1;
+        
+        result = vkCreateFramebuffer(device, &framebufferbCreateInfo, NULL, &swapchainFramebuffers[i]);
+        if (result != VK_SUCCESS) {
+            std::cout << "Failed to create swapchain framebuffer view[" <<  i << "]: " << getVulkanErrorString(result) << std::endl;
+            return false;
+        }
+    }
+    
+    return true;
+}
 
+bool Renderer::initRenderPass() {
+    VkResult result;
+
+    VkAttachmentDescription attachments[2] {};
+    attachments[0].format = surfaceFormat.format;;
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    attachments[1].format = surfaceFormat.format;;
+    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference color_reference {};
+    color_reference.attachment = 0;
+    color_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    
+    VkAttachmentReference depth_reference {};
+    depth_reference.attachment = 1;
+    depth_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    
+    VkSubpassDescription subpass {};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.flags = 0;
+    subpass.inputAttachmentCount = 0;
+    subpass.pInputAttachments = NULL;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &color_reference;
+    subpass.pResolveAttachments = NULL;
+    subpass.pDepthStencilAttachment = &depth_reference;
+    subpass.preserveAttachmentCount = 0;
+    subpass.pPreserveAttachments = NULL;
+
+    VkRenderPassCreateInfo rp_info {};
+    rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    rp_info.pNext = NULL;
+    rp_info.attachmentCount = 2;
+    rp_info.pAttachments = attachments;
+    rp_info.subpassCount = 1;
+    rp_info.pSubpasses = &subpass;
+    rp_info.dependencyCount = 0;
+    rp_info.pDependencies = NULL;
+    
+    result = vkCreateRenderPass(device, &rp_info, NULL, &renderPass);
+    if (result != VK_SUCCESS) {
+        std::cout << "Failed to create renderpass" << getVulkanErrorString(result) << std::endl;
+        return false;
     }
     
     return true;
@@ -363,7 +589,10 @@ bool Renderer::initSwapchainImages() {
 
 // Destroy
 Renderer::~Renderer(){
+    vkDeviceWaitIdle(device);
+    
     destroyCommands();
+    destroyRenderPass();
     destroySwapchainImages();
     destroySwapchain();
     destroySurface();
@@ -381,7 +610,6 @@ void Renderer::destroyInstance() {
 
 void Renderer::destroyDevice() {
     if (device != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(device);
         vkDestroyDevice(device, NULL);
         std::cout << "Device deleted" << std::endl;
     }
@@ -420,6 +648,17 @@ void Renderer::destroySwapchainImages() {
             std::cout << "ImageView" << i <<" deleted" << std::endl;
         }
     }
-    
     std::cout << "All ImageViews deleted" << std::endl;
+    
+    for (uint32_t i = 0; i < swapchainImageCount; ++i) {
+        if (swapchainFramebuffers[i] != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(device, swapchainFramebuffers[i], NULL);
+            std::cout << "Framebuffers" << i <<" deleted" << std::endl;
+        }
+    }
+    std::cout << "All Framebuffers deleted" << std::endl;
+}
+
+void Renderer::destroyRenderPass(){ 
+    
 }
